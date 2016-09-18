@@ -1,0 +1,60 @@
+import sys
+from select import select
+import tty
+import termios
+
+try:
+    # more correct to use monotonic time where available ...
+    from time33 import clock_gettime
+    def time(): return clock_gettime(0)
+except ImportError:
+    # ... but plain old 'time' may be good enough if not.
+    from time import time
+
+timeout = 4  
+prompt = "Type any number from 0 up to 9"
+default = 99 
+
+def input_with(prompt, timeout, default):
+    """Read an input from the user or timeout"""
+    print prompt,
+    sys.stdout.flush()
+
+    # store terminal settings
+    old_settings = termios.tcgetattr(sys.stdin)
+
+    buff = ''
+    try:    
+        tty.setcbreak(sys.stdin) # flush per-character
+
+        break_time = time() + timeout
+
+        while True:
+
+            rlist, _, _ = select([sys.stdin], [], [], break_time - time())
+            if rlist:
+                c = sys.stdin.read(1)
+
+                # swallow CR (in case running on Windows)
+                if c == '\r':
+                    continue
+                # newline EOL or EOF are also end of input
+                if c in ('\n', None, '\x04'):
+                    break # newline is also end of input
+                buff += c
+
+                sys.stdout.write(c) # echo back
+                sys.stdout.flush()
+
+            else: # must have timed out
+                break
+
+    finally:
+        # put terminal back the way it was
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+
+    if buff:
+        return int(buff.replace('\n','').strip())
+    else:
+        sys.stdout.write('%d' % default)
+        return default
